@@ -1,4 +1,4 @@
-module github.com/camptocamp/prometheus-puppetdb-exporter
+module github.com/TravisS25/prometheus-puppetdb-exporter
 
 go 1.15
 
