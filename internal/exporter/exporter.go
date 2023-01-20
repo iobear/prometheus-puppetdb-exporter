@@ -64,7 +64,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 }
 
 // Scrape scrapes PuppetDB and update metrics
-func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, categories map[string]struct{}) {
+func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose bool, categories map[string]struct{}) {
 	var statuses map[string]int
 
 	unreportedDuration, err := time.ParseDuration(unreportedNode)
@@ -73,7 +73,10 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, categor
 		return
 	}
 
+	const unreportedStr = "unreported"
+
 	for {
+		statusStr := ""
 		statuses = make(map[string]int)
 
 		nodes, err := e.client.Nodes()
@@ -86,37 +89,61 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, categor
 
 		for _, node := range nodes {
 			var deactivated string
+			unreported := false
+
+			// This doesn't matter too much for unreported status
 			if node.Deactivated == "" {
 				deactivated = "false"
 			} else {
 				deactivated = "true"
 			}
 
+			// Note: The unreported nodes in puppetboard (front end) will filter out nodes in
+			// the puppetdb if they have gone unreported for a long time (~1 week+). These nodes
+			// are queryable via the API and will not have a "lastestReport" on them.
+			// These nodes are NOT listed in puppetboard under "unreported" nodes either.
 			if node.ReportTimestamp == "" {
-				if deactivated == "false" {
-					statuses["unreported"]++
+				if verbose && !unreported{
+					log.Debugf("node: %s - because timestamp is blank string\n", node.Certname)
 				}
-				continue
+
+				statusStr = unreportedStr
+				unreported = true
 			}
 			latestReport, err := time.Parse("2006-01-02T15:04:05Z", node.ReportTimestamp)
 			if err != nil {
-				if deactivated == "false" {
-					statuses["unreported"]++
+				if verbose && !unreported{
+					log.Debugf("node: %s - because invalid time parsed\n", node.Certname)
 				}
-				log.Errorf("failed to parse report timestamp: %s", err)
-				continue
-			}
-			e.metrics["report"].With(prometheus.Labels{"environment": node.ReportEnvironment, "host": node.Certname, "deactivated": deactivated}).Set(float64(latestReport.Unix()))
 
-			if deactivated == "false" {
-				if latestReport.Add(unreportedDuration).Before(time.Now()) {
-					statuses["unreported"]++
-				} else if node.LatestReportStatus == "" {
-					statuses["unreported"]++
-				} else {
-					statuses[node.LatestReportStatus]++
-				}
+				statusStr = unreportedStr
+				unreported = true
 			}
+
+			if latestReport.Add(unreportedDuration).Before(time.Now()) {
+				if verbose && !unreported {
+					log.Debugf("node: %s - latest timestamp older than %s\n", node.Certname, unreportedDuration)
+				}
+
+				unreported = true
+				statusStr = unreportedStr
+			} else if node.LatestReportStatus == "" {
+				if verbose && !unreported{
+					log.Debugf("node: %s - because unreported status\n", node.Certname)
+				}
+
+				unreported = true
+				statusStr = unreportedStr
+			} else {
+				statuses[node.LatestReportStatus]++
+				statusStr = node.LatestReportStatus
+			}
+
+			if unreported{
+				statuses["unreported"]++
+			}
+
+			e.metrics["report"].With(prometheus.Labels{"environment": node.ReportEnvironment, "host": node.Certname, "deactivated": deactivated, "status": statusStr}).Set(float64(latestReport.Unix()))
 
 			if node.LatestReportHash != "" {
 				reportMetrics, _ := e.client.ReportMetrics(node.LatestReportHash)
@@ -161,7 +188,7 @@ func (e *Exporter) initGauges(categories map[string]struct{}) {
 		Namespace: "puppet",
 		Name:      "report",
 		Help:      "Timestamp of latest report",
-	}, []string{"environment", "host", "deactivated"})
+	}, []string{"environment", "host", "deactivated", "status"})
 
 	for _, m := range e.metrics {
 		prometheus.MustRegister(m)

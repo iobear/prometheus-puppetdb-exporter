@@ -81,7 +81,7 @@ func main() {
 		log.Fatalf("failed to initialize exporter: %s", err)
 	}
 
-	go exp.Scrape(interval, c.UnreportedNode, categories)
+	go exp.Scrape(interval, c.UnreportedNode, c.Verbose, categories)
 
 	buildInfo := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "puppetdb_exporter_build_info",
