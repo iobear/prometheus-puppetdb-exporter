@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/TravisS25/prometheus-puppetdb-exporter/internal/puppetdb"
+	"github.com/EncoreTechnologies/prometheus-puppetdb-exporter/internal/puppetdb"
 )
 
 // Exporter implements the prometheus.Exporter interface, and exports PuppetDB metrics

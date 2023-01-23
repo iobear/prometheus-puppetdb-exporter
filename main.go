@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/TravisS25/prometheus-puppetdb-exporter/internal/exporter"
+	"github.com/EncoreTechnologies/prometheus-puppetdb-exporter/internal/exporter"
 )
 
 // Config stores handler's configuration
