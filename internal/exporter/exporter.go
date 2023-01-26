@@ -18,6 +18,11 @@ type Exporter struct {
 	metrics   map[string]*prometheus.GaugeVec
 }
 
+type metric struct {
+	labels prometheus.Labels
+	value  float64
+}
+
 var (
 	metricMap = map[string]string{
 		"node_status_count": "node_status_count",
@@ -84,8 +89,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 			log.Errorf("failed to get nodes: %s", err)
 		}
 
-		e.metrics["report"].Reset()
-		e.metrics["node_report_status_count"].Reset()
+		reports := map[string][]metric{}
 
 		for _, node := range nodes {
 			var deactivated, reasonStr string
@@ -105,7 +109,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 			// are queryable via the API and will not have a "lastestReport" on them.
 			// These nodes are NOT listed in puppetboard under "unreported" nodes either.
 			if node.ReportTimestamp == "" {
-				if !unreported{
+				if !unreported {
 					reasonStr = "Timestamp string is blank"
 
 					if verbose {
@@ -118,7 +122,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 			}
 			latestReport, err := time.Parse("2006-01-02T15:04:05Z", node.ReportTimestamp)
 			if err != nil {
-				if !unreported{
+				if !unreported {
 					reasonStr = "Invalid time parsed"
 
 					if verbose {
@@ -131,7 +135,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 			}
 
 			if latestReport.Add(unreportedDuration).Before(time.Now()) {
-				if !unreported{
+				if !unreported {
 					reasonStr = fmt.Sprintf("Latest timestamp older than %s", unreportedDuration)
 
 					if verbose {
@@ -142,7 +146,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 				unreported = true
 				statusStr = unreportedStr
 			} else if node.LatestReportStatus == "" {
-				if !unreported{
+				if !unreported {
 					reasonStr = "Unreported status"
 
 					if verbose {
@@ -157,19 +161,20 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 				statusStr = node.LatestReportStatus
 			}
 
-			if unreported{
+			if unreported {
 				statuses["unreported"]++
 			}
 
-			e.metrics["report"].With(
-				prometheus.Labels{
+			reports["report"] = append(reports["report"], metric{
+				labels: prometheus.Labels{
 					"environment": node.ReportEnvironment,
-					"host": node.Certname,
+					"host":        node.Certname,
 					"deactivated": deactivated,
-					"status": statusStr,
-					"reason": reasonStr,
+					"status":      statusStr,
+					"reason":      reasonStr,
 				},
-			).Set(float64(latestReport.Unix()))
+				value: float64(latestReport.Unix()),
+			})
 
 			if node.LatestReportHash != "" {
 				reportMetrics, _ := e.client.ReportMetrics(node.LatestReportHash)
@@ -177,21 +182,39 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 					_, ok := categories[reportMetric.Category]
 					if ok {
 						category := fmt.Sprintf("report_%s", reportMetric.Category)
-						e.metrics[category].With(
-							prometheus.Labels{
-								"name": strings.ReplaceAll(strings.Title(reportMetric.Name), "_", " "),
+						reports[category] = append(reports[category], metric{
+							labels: prometheus.Labels{
+								"name":        strings.ReplaceAll(strings.Title(reportMetric.Name), "_", " "),
 								"environment": node.ReportEnvironment,
-								"host": node.Certname,
+								"deactivated": deactivated,
+								"host":        node.Certname,
+								"status":      statusStr,
+								"reason":      reasonStr,
 							},
-						).Set(reportMetric.Value)
+							value: reportMetric.Value,
+						})
 					}
 				}
 			}
 		}
 
+		e.metrics["node_report_status_count"].Reset()
+
 		for statusName, statusValue := range statuses {
 			e.metrics["node_report_status_count"].With(prometheus.Labels{"status": statusName}).Set(float64(statusValue))
 		}
+
+		for k, m := range e.metrics {
+			if k != "node_report_status_count" {
+				m.Reset()
+
+				for _, t := range reports[k] {
+					m.With(t.labels).Set(t.value)
+				}
+			}
+		}
+
+		reports = nil
 
 		time.Sleep(interval)
 	}
@@ -212,7 +235,7 @@ func (e *Exporter) initGauges(categories map[string]struct{}) {
 			Namespace: "puppet",
 			Name:      metricName,
 			Help:      fmt.Sprintf("Total count of %s per status", category),
-		}, []string{"name", "environment", "host"})
+		}, []string{"name", "environment", "host", "deactivated", "status", "reason"})
 
 	}
 
