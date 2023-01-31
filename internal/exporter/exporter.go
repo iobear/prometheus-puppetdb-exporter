@@ -79,6 +79,7 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 	}
 
 	const unreportedStr = "unreported"
+	const debugStr = "Node: %s / Unreported Reason: %s\n"
 
 	for {
 		statusStr := ""
@@ -92,77 +93,80 @@ func (e *Exporter) Scrape(interval time.Duration, unreportedNode string, verbose
 		reports := map[string][]metric{}
 
 		for _, node := range nodes {
-			var deactivated, reasonStr string
+			var reasonStr, deactivated string
+			var latestReport time.Time
 			var unreported bool
-
-			debugStr := "Node: %s / Unreported Reason: %s\n"
 
 			// This doesn't matter too much for unreported status
 			if node.Deactivated == "" {
 				deactivated = "false"
 			} else {
 				deactivated = "true"
+				statusStr = "deactivated"
+				statuses[statusStr]++
 			}
 
-			// Note: The unreported nodes in puppetboard (front end) will filter out nodes in
-			// the puppetdb if they have gone unreported for a long time (~1 week+). These nodes
-			// are queryable via the API and will not have a "lastestReport" on them.
-			// These nodes are NOT listed in puppetboard under "unreported" nodes either.
-			if node.ReportTimestamp == "" {
-				if !unreported {
-					reasonStr = "Timestamp string is blank"
+			if deactivated == "false" {
+				// Note: The unreported nodes in puppetboard (front end) will filter out nodes in
+				// the puppetdb if they have gone unreported for a long time (~1 week+). These nodes
+				// are queryable via the API and will not have a "lastestReport" on them.
+				// These nodes are NOT listed in puppetboard under "unreported" nodes either.
+				if node.ReportTimestamp == "" {
+					if !unreported {
+						reasonStr = "Timestamp string is blank"
 
-					if verbose {
-						log.Debugf(debugStr, node.Certname, reasonStr)
+						if verbose {
+							log.Debugf(debugStr, node.Certname, reasonStr)
+						}
+					}
+
+					statusStr = unreportedStr
+					unreported = true
+				}
+
+				if !unreported {
+					latestReport, err = time.Parse("2006-01-02T15:04:05Z", node.ReportTimestamp)
+
+					if err != nil {
+						reasonStr = "Invalid time parsed"
+
+						if verbose {
+							log.Debugf(debugStr, node.Certname, reasonStr)
+						}
+
+						statusStr = unreportedStr
+						unreported = true
 					}
 				}
 
-				statusStr = unreportedStr
-				unreported = true
-			}
-			latestReport, err := time.Parse("2006-01-02T15:04:05Z", node.ReportTimestamp)
-			if err != nil {
 				if !unreported {
-					reasonStr = "Invalid time parsed"
+					if latestReport.Add(unreportedDuration).Before(time.Now()) {
+						reasonStr = fmt.Sprintf("Latest timestamp older than %s", unreportedDuration)
 
-					if verbose {
-						log.Debugf(debugStr, node.Certname, reasonStr)
+						if verbose {
+							log.Debugf(debugStr, node.Certname, reasonStr)
+						}
+
+						unreported = true
+						statusStr = unreportedStr
+					} else if node.LatestReportStatus == "" {
+						reasonStr = "Unreported status"
+
+						if verbose {
+							log.Debugf(debugStr, node.Certname, reasonStr)
+						}
+
+						statusStr = unreportedStr
+						unreported = true
+					} else {
+						statusStr = node.LatestReportStatus
+						statuses[statusStr]++
 					}
 				}
 
-				statusStr = unreportedStr
-				unreported = true
-			}
-
-			if latestReport.Add(unreportedDuration).Before(time.Now()) {
-				if !unreported {
-					reasonStr = fmt.Sprintf("Latest timestamp older than %s", unreportedDuration)
-
-					if verbose {
-						log.Debugf(debugStr, node.Certname, reasonStr)
-					}
+				if unreported {
+					statuses[unreportedStr]++
 				}
-
-				unreported = true
-				statusStr = unreportedStr
-			} else if node.LatestReportStatus == "" {
-				if !unreported {
-					reasonStr = "Unreported status"
-
-					if verbose {
-						log.Debugf(debugStr, node.Certname, reasonStr)
-					}
-				}
-
-				unreported = true
-				statusStr = unreportedStr
-			} else {
-				statuses[node.LatestReportStatus]++
-				statusStr = node.LatestReportStatus
-			}
-
-			if unreported {
-				statuses["unreported"]++
 			}
 
 			reports["report"] = append(reports["report"], metric{
