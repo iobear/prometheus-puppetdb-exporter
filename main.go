@@ -1,3 +1,4 @@
+// Package main combining prom exporter and puppetdb in a glorious union
 package main
 
 import (
@@ -12,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/EncoreTechnologies/prometheus-puppetdb-exporter/internal/exporter"
+	"github.com/iobear/prometheus-puppetdb-exporter/internal/exporter"
 )
 
 // Config stores handler's configuration

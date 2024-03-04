@@ -1,3 +1,4 @@
+// Package exporter implements the prometheus.Exporter interface, and exports PuppetDB metrics
 package exporter
 
 import (
@@ -8,10 +9,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/EncoreTechnologies/prometheus-puppetdb-exporter/internal/puppetdb"
+	"github.com/iobear/prometheus-puppetdb-exporter/internal/puppetdb"
 )
 
-// Exporter implements the prometheus.Exporter interface, and exports PuppetDB metrics
+// Exporter type
 type Exporter struct {
 	client    *puppetdb.PuppetDB
 	namespace string

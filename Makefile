@@ -23,9 +23,9 @@ clean:
 	rm -f prometheus-puppetdb-exporter
 
 lint:
-	@go get -v golang.org/x/lint/golint
+	@go get -v github.com/mgechev/revive
 	@for file in $$(git ls-files '*.go' | grep -v '_workspace/'); do \
-		export output="$$(golint $${file} | grep -v 'type name will be used as docker.DockerInfo')"; \
+		export output="$$(revive -config revive.toml $${file})"; \
 		[ -n "$${output}" ] && echo "$${output}" && export status=1; \
 	done; \
 	exit $${status:-0}

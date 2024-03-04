@@ -1,3 +1,4 @@
+// Package puppetdb for PuppetDB data retrieval
 package puppetdb
 
 import (
