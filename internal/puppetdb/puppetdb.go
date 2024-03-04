@@ -6,9 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -68,7 +69,7 @@ func NewClient(options *Options) (p *PuppetDB, err error) {
 		}
 
 		// Load CA cert
-		caCert, err := ioutil.ReadFile(options.CACertPath)
+		caCert, err := os.ReadFile(options.CACertPath)
 		if err != nil {
 			err = fmt.Errorf("failed to load ca certificate: %s", err)
 			return nil, err
@@ -82,7 +83,6 @@ func NewClient(options *Options) (p *PuppetDB, err error) {
 			RootCAs:            caCertPool,
 			InsecureSkipVerify: !options.SSLVerify,
 		}
-		tlsConfig.BuildNameToCertificate()
 		transport = &http.Transport{TLSClientConfig: tlsConfig}
 	} else {
 		transport = &http.Transport{}
@@ -135,7 +135,7 @@ func (p *PuppetDB) get(endpoint string, query string, object interface{}) (err e
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("failed to read response: %s", err)
 		return
